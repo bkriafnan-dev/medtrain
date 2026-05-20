@@ -1,0 +1,207 @@
+// MedTrain Pro — Database Schema (Prisma)
+// PostgreSQL database for Jazan Health Cluster Training Department
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// USERS & AUTH
+// ============================================================
+enum Role {
+  ADMIN
+  COORDINATOR
+  TRAINER
+  VIEWER
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  name         String
+  role         Role      @default(VIEWER)
+  active       Boolean   @default(true)
+  lastLogin    DateTime? @map("last_login")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  auditLogs    AuditLog[]
+
+  @@map("users")
+}
+
+// ============================================================
+// SPECIALTIES & PROGRAM TYPES
+// ============================================================
+model Specialty {
+  id        String     @id @default(cuid())
+  nameEn    String     @map("name_en")
+  nameAr    String     @map("name_ar")
+  color     String     @default("#0d8e7f")
+  trainees  Trainee[]
+
+  @@map("specialties")
+}
+
+model ProgramType {
+  id        String     @id @default(cuid())
+  code      String     @unique
+  nameEn    String     @map("name_en")
+  nameAr    String     @map("name_ar")
+  color     String     @default("#5b67e0")
+  paid      Boolean    @default(false)
+  trainees  Trainee[]
+
+  @@map("program_types")
+}
+
+// ============================================================
+// TRAINEES (the core 5,929 records)
+// ============================================================
+enum TraineeStatus {
+  ACTIVE
+  COMPLETED
+  INACTIVE
+}
+
+model Trainee {
+  id            String        @id @default(cuid())
+  name          String
+  specialtyId   String?       @map("specialty_id")
+  specialty     Specialty?    @relation(fields: [specialtyId], references: [id])
+  programTypeId String?       @map("program_type_id")
+  programType   ProgramType?  @relation(fields: [programTypeId], references: [id])
+  programCode   String        @map("program_code") // denormalized for fast filtering
+  status        TraineeStatus @default(ACTIVE)
+  gender        String        @default("male")
+  email         String?
+  mobile        String?
+  nationalId    String?       @map("national_id")
+  university    String?
+  startDate     String?       @map("start_date")
+  endDate       String?       @map("end_date")
+  paid          Boolean       @default(false)
+  revenue       Float         @default(0)
+
+  // Certificates
+  scfhsNo       String?       @map("scfhs_no")
+  scfhsExpiry   String?       @map("scfhs_expiry")
+  cprExpiry     String?       @map("cpr_expiry")
+  aclsExpiry    String?       @map("acls_expiry")
+  palsExpiry    String?       @map("pals_expiry")
+  atlsExpiry    String?       @map("atls_expiry")
+  certs         Json?         // {specialty, acls, pals, atls, bls}
+
+  source        String?       // import origin
+  notes         String?
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  @@index([programCode])
+  @@index([specialtyId])
+  @@index([status])
+  @@index([name])
+  @@map("trainees")
+}
+
+// ============================================================
+// COURSES & WORKSHOPS
+// ============================================================
+model Course {
+  id              String        @id @default(cuid())
+  title           String
+  category        String        @default("course") // course/workshop/lecture/presentation
+  date            String?
+  year            Int           @default(2026)
+  sessions        Int           @default(1)
+  totalAttendance Int           @default(0) @map("total_attendance")
+  speaker         String?
+  jobTitle        String?       @map("job_title")
+  department      String?
+  pathway         String?
+  hospital        String?
+  description     String?
+  source          String?
+  createdAt       DateTime      @default(now()) @map("created_at")
+  files           CourseFile[]
+
+  @@index([year])
+  @@index([pathway])
+  @@map("courses")
+}
+
+model CourseFile {
+  id         String   @id @default(cuid())
+  courseId   String   @map("course_id")
+  course     Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  name       String
+  type       String
+  size       String?
+  storageKey String   @map("storage_key") // S3/R2 object key
+  uploadedAt DateTime @default(now()) @map("uploaded_at")
+
+  @@map("course_files")
+}
+
+// ============================================================
+// HOSPITAL ORIENTATION
+// ============================================================
+model OrientationSession {
+  id        String   @id @default(cuid())
+  title     String
+  date      String?
+  year      Int      @default(2026)
+  attendees Int      @default(0)
+  notes     String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([year])
+  @@map("orientation_sessions")
+}
+
+// ============================================================
+// ATTENDANCE PROOFS (Side of Course Attendance)
+// ============================================================
+model AttendanceProof {
+  id            String                @id @default(cuid())
+  title         String
+  year          Int                   @default(2026)
+  linkedCourseId String?              @map("linked_course_id")
+  uploadedAt    DateTime              @default(now()) @map("uploaded_at")
+  files         AttendanceProofFile[]
+
+  @@index([year])
+  @@map("attendance_proofs")
+}
+
+model AttendanceProofFile {
+  id         String          @id @default(cuid())
+  proofId    String          @map("proof_id")
+  proof      AttendanceProof @relation(fields: [proofId], references: [id], onDelete: Cascade)
+  name       String
+  type       String
+  size       String?
+  storageKey String          @map("storage_key")
+
+  @@map("attendance_proof_files")
+}
+
+// ============================================================
+// AUDIT LOG
+// ============================================================
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?  @map("user_id")
+  user      User?    @relation(fields: [userId], references: [id])
+  action    String
+  target    String?
+  ip        String?
+  timestamp DateTime @default(now())
+
+  @@index([timestamp])
+  @@map("audit_logs")
+}
